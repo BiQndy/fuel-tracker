@@ -40,6 +40,17 @@ const state = {
 // ------------------------------------------------------------
 
 async function init() {
+    // Проверка, загрузился ли API Яндекс.Карт
+    if (window.__ymapsError || typeof ymaps3 === 'undefined') {
+        document.getElementById('map').innerHTML = '<div class="map-error">' +
+            '<h3>⛔ Не удалось загрузить карту</h3>' +
+            '<p>API-ключ Яндекс.Карт недействителен или неверно настроен.</p>' +
+            '<p class="map-error-hint">Подробнее — в консоли браузера (F12 → Console).</p>' +
+            '</div>';
+        console.error('❌ Fuel Tracker: Яндекс.Карты API не загрузился. Проверьте API-ключ.');
+        return;
+    }
+
     await ymaps3.ready;
 
     const {

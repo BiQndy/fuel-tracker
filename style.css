@@ -143,6 +143,45 @@ input[type="number"]::-webkit-outer-spin-button {
     border-radius: 8px;
 }
 
+/* ---- Ошибка загрузки карты ---- */
+#map .map-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+    color: #e0e0e0;
+}
+
+#map .map-error h3 {
+    font-size: 22px;
+    margin-bottom: 12px;
+    color: #ff7043;
+}
+
+#map .map-error p {
+    font-size: 14px;
+    color: #8899aa;
+    max-width: 360px;
+    line-height: 1.6;
+}
+
+#map .map-error code {
+    background: rgba(255,255,255,0.08);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.map-error-hint {
+    margin-top: 8px;
+    font-size: 12px !important;
+    color: #667788 !important;
+}
+
+
 /* ---- Кастомные маркеры на карте ---- */
 .custom-marker {
     width: 36px;
