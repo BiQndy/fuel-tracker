@@ -1,5 +1,6 @@
-// Fuel Route Tracker - 2GIS MapGL JS API
+// Fuel Route Tracker - 2GIS RasterJS API
 const API_KEY = 'b33facdc-f20e-4837-867d-36ed05444897';
+
 const els = {
     pointA: document.getElementById('pointA'),
     pointB: document.getElementById('pointB'),
@@ -14,18 +15,24 @@ const state = { pointA: null, pointB: null, markers: [], route: null, distanceKm
 let clickCount = 0;
 
 function init() {
-    console.log('2GIS MapGL loaded:', typeof DG);
-    if (typeof DG === 'undefined') { showError(); return; }
+    console.log('2GIS loaded:', typeof DG);
+    if (typeof DG === 'undefined') {
+        document.getElementById('map').innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#e0e0e0;text-align:center;padding:20px;">' +
+            '<div><h3 style="color:#ff7043;">Не удалось загрузить 2ГИС</h3><p>Проверьте консоль (F12).</p></div></div>';
+        return;
+    }
 
-    const map = new DG.Map('map', {
-        center: [37.618423, 55.751244], // [lon, lat] for 2GIS
+    const map = DG.map('map', {
+        center: [55.751244, 37.618423],
         zoom: 12,
         key: API_KEY,
     });
     state.map = map;
 
     map.on('click', (e) => {
-        const [lon, lat] = e.lngLat;
+        const lat = e.latlng.lat;
+        const lon = e.latlng.lng;
         handleClick(lat, lon);
     });
 
@@ -33,13 +40,15 @@ function init() {
     els.resetBtn.addEventListener('click', resetAll);
 }
 
-function showError() {
-    document.getElementById('map').innerHTML =
-        '<div style=\'display:flex;align-items:center;justify-content:center;height:100%;color:#e0e0e0;text-align:center;padding:20px;\'><div><h3 style=\'color:#ff7043;\'>Ошибка загрузки 2ГИС</h3><p>Проверьте консоль (F12).</p></div></div>';
-    console.error('ERROR: DG is not defined');
+// Wait for DG to be ready
+function waitForDG() {
+    if (typeof DG !== 'undefined') {
+        init();
+    } else {
+        setTimeout(waitForDG, 100);
+    }
 }
-
-DG.ready(init);
+waitForDG();
 
 
 async function handleClick(lat, lon) {
@@ -68,8 +77,8 @@ async function buildRoute(A, B) {
     console.log('Building route:', A.lat, A.lon, '->', B.lat, B.lon);
 
     const url = 'https://routing.api.2gis.com/get_directions/v1?key=' + API_KEY +
-        '&origin=' + A.lon + ',' + A.lat +
-        '&destination=' + B.lon + ',' + B.lat +
+        '&origin=' + A.lat + ',' + A.lon +
+        '&destination=' + B.lat + ',' + B.lon +
         '&result_format=json';
 
     try {
@@ -80,7 +89,6 @@ async function buildRoute(A, B) {
         let distance = null;
         if (data && data.result && data.result.length > 0) {
             distance = data.result[0].routeGeometry.totalDistance;
-            // Draw route on map if possible
         }
 
         if (distance) {
@@ -110,6 +118,7 @@ function updateResult() {
     els.fuelResult.textContent = liters.toFixed(1) + ' л';
 }
 
+
 async function reverseGeocode(lat, lon) {
     const url =
         'https://catalog.api.2gis.com/2.0/geocode' +
@@ -133,23 +142,23 @@ async function reverseGeocode(lat, lon) {
 }
 
 function addMarker(lat, lon, label, color) {
-    const el = document.createElement('div');
-    el.className = 'custom-marker';
-    el.innerHTML = '<span class="marker-label">' + label + '</span>';
-    el.style.setProperty('--marker-color', color);
-    const marker = new DG.Marker({ coordinates: [lon, lat] });
-    marker.setElement(el);
-    marker.addTo(state.map);
+    const marker = DG.marker([lat, lon], {
+        icon: {
+            html: '<div class="custom-marker" style="--marker-color:' + color + '"><span class="marker-label">' + label + '</span></div>',
+            iconSize: [36, 36],
+            iconAnchor: [18, 18],
+        }
+    }).addTo(state.map);
     state.markers.push(marker);
 }
 
 function clearMarkers() {
-    state.markers.forEach(m => m.remove());
+    state.markers.forEach(m => state.map.removeLayer(m));
     state.markers = [];
 }
 
 function clearRoute() {
-    if (state.route) { state.route.remove(); state.route = null; }
+    if (state.route) { state.map.removeLayer(state.route); state.route = null; }
 }
 
 function resetAll() {
