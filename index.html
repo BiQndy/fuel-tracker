@@ -5,16 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fuel Route Tracker</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="https://api-maps.yandex.ru/3.0/?apikey=6b86b20b-ab60-428d-a9b0-6ca63263f4f0&lang=ru_RU"
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=6b86b20b-ab60-428d-a9b0-6ca63263f4f0&lang=ru_RU&load=multiRoute,geocode"
         type="text/javascript"
-        onerror="window.__ymapsError=true; console.error('Yandex Maps API script failed to load');">
+        onerror="window.__ymapsError=true; document.getElementById('map').innerHTML='<div class=\'map-error\'><h3>Карта не загрузилась</h3><p>Проверьте консоль F12</p></div>'">
     </script>
 </head>
 <body>
     <div id="map"></div>
 
     <div id="panel">
-        <h2>⛽ Расход топлива</h2>
+        <h2>Расход топлива</h2>
 
         <div class="row">
             <span class="label">Точка А:</span>
@@ -41,10 +41,10 @@
             <span id="fuelResult" class="value highlight">—</span>
         </div>
 
-        <button id="resetBtn">✕ Сбросить маршрут</button>
+        <button id="resetBtn">Сбросить маршрут</button>
 
         <div class="hint">
-            🖱️ Кликните на карте:<br />
+            Кликните на карте:<br />
             1-й клик — точка А<br />
             2-й клик — точка Б
         </div>

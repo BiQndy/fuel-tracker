@@ -1,12 +1,4 @@
-// Fuel Route Tracker - Yandex Maps API 3.0
-const CONFIG = {
-    apikey: '6b86b20b-ab60-428d-a9b0-6ca63263f4f0',
-    geocodeKey: '2010aee2-6b9d-4ca4-8529-ce5b57bd2290',
-    center: [55.751244, 37.618423],
-    zoom: 12,
-    markerColors: { A: '#4fc3f7', B: '#ff7043' },
-};
-
+// Fuel Route Tracker - Yandex Maps API 2.1
 const els = {
     pointA: document.getElementById('pointA'),
     pointB: document.getElementById('pointB'),
@@ -16,162 +8,118 @@ const els = {
     resetBtn: document.getElementById('resetBtn'),
 };
 
-const state = {
-    pointA: null, pointB: null,
-    markers: [], route: null,
-    distanceKm: null, map: null,
-};
+const state = { pointA: null, pointB: null, markers: [], route: null, distanceKm: null, map: null };
 
 let clickCount = 0;
 
+function init() {
+    console.log('Yandex Maps loaded:', typeof ymaps);
+    if (typeof ymaps === 'undefined') { showError(); return; }
 
-async function init() {
-    console.log('init() called, ymaps3:', typeof ymaps3);
+    const map = new ymaps.Map('map', {
+        center: [55.751244, 37.618423],
+        zoom: 12,
+        controls: ['zoomControl'],
+    });
+    state.map = map;
 
-    if (typeof ymaps3 === 'undefined' || window.__ymapsError) {
-        document.getElementById('map').innerHTML =
-            '<div class="map-error">' +
-            '<h3>\u26d4 \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0430\u0440\u0442\u0443</h3>' +
-            '<p>\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 API-\u043a\u043b\u044e\u0447 \u0432 \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0435<br/><a href="https://developer.tech.yandex.ru/" target="_blank">developer.tech.yandex.ru</a></p>' +
-            '<p class="map-error-hint">F12 \u2192 Console</p></div>';
-        return;
-    }
+    map.events.add('click', function(e) {
+        const c = e.get('coords');
+        handleClick(c[0], c[1]);
+    });
 
-    try {
-        const { YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapMarker, YMapListener } =
-            await ymaps3.import('@yandex/ymaps3-map');
-
-        await ymaps3.import('@yandex/ymaps3-marker');
-        const { YMapMultiRoute } = await ymaps3.import('@yandex/ymaps3-multi-route');
-
-        window._YMapMarker = YMapMarker;
-        console.log('Modules loaded:', { YMap, YMapMarker, YMapMultiRoute });
-
-        const map = new YMap(
-            document.getElementById('map'),
-            { location: { center: CONFIG.center, zoom: CONFIG.zoom } },
-            [ new YMapDefaultSchemeLayer(), new YMapDefaultFeaturesLayer() ]
-        );
-        state.map = map;
-
-        const listener = new YMapListener({
-            layer: 'any',
-            onClick: (e) => {
-                const coords = e.worldCoordinates;
-                handleMapClick(coords[1], coords[0]);
-            },
-        });
-        map.addChild(listener);
-
-        els.fuelConsumption.addEventListener('input', updateFuelResult);
-        els.resetBtn.addEventListener('click', resetRoute);
-
-    } catch (err) {
-        console.error('Init error:', err);
-        document.getElementById('map').innerHTML =
-            '<div class="map-error"><h3>\u26d4 \u041e\u0448\u0438\u0431\u043a\u0430</h3><p>' + err.message + '</p></div>';
-    }
+    els.fuelConsumption.addEventListener('input', updateResult);
+    els.resetBtn.addEventListener('click', resetAll);
 }
 
-ymaps3.ready.then(init);
+function showError() {
+    const el = document.getElementById('map');
+    if (el) el.innerHTML = '<div style=\'display:flex;align-items:center;justify-content:center;height:100%;color:#e0e0e0;text-align:center;padding:20px;\'><div><h3 style=\'color:#ff7043;\'>Не удалось загрузить Яндекс.Карты</h3><p>Проверьте консоль (F12). Если IP-адрес заблокирован, откройте приложение через localhost (python -m http.server 8000).</p></div></div>';
+    console.error('ERROR: ymaps is not defined');
+}
+
+ymaps.ready(init);
 
 
-async function handleMapClick(lat, lon) {
-    const address = await reverseGeocode(lat, lon);
+async function handleClick(lat, lon) {
+    const address = await geocode(lat, lon);
+    console.log('Clicked:', lat, lon, 'Address:', address);
 
     if (clickCount === 0) {
         state.pointA = { lat, lon, address };
-        els.pointA.textContent = truncateAddress(address);
+        els.pointA.textContent = address;
         clickCount = 1;
-        removeAllMarkers();
-        removeRoute();
-        addMarker(lat, lon, 'A', CONFIG.markerColors.A);
-        clearResults();
+        clearMarkers(); clearRoute();
+        addMarker(lat, lon, 'A', '#4fc3f7');
+        resetResults();
     } else {
         state.pointB = { lat, lon, address };
-        els.pointB.textContent = truncateAddress(address);
+        els.pointB.textContent = address;
         clickCount = 0;
-        addMarker(lat, lon, 'B', CONFIG.markerColors.B);
+        addMarker(lat, lon, 'B', '#ff7043');
         buildRoute(state.pointA, state.pointB);
     }
 }
 
 
-async function buildRoute(pointA, pointB) {
-    removeRoute();
+async function buildRoute(A, B) {
+    clearRoute();
+    console.log('Building route:', A.lat, A.lon, '->', B.lat, B.lon);
+
     try {
-        const { YMapMultiRoute } = await ymaps3.import('@yandex/ymaps3-multi-route');
+        const route = new ymaps.multiRoute.MultiRoute({
+            referencePoints: [[A.lat, A.lon], [B.lat, B.lon]],
+        }, { boundsAutoApply: true });
 
-        const route = new YMapMultiRoute(
-            {
-                coordinates: [
-                    [pointA.lon, pointA.lat],
-                    [pointB.lon, pointB.lat],
-                ],
-                routingMode: 'driving',
-            },
-            {
-                strokeWidth: 4,
-                strokeColor: '#4fc3f7',
-                opacity: 0.85,
-                activeStrokeWidth: 6,
-                viaPointVisible: false,
-                boundsAutoApply: true,
-            }
-        );
-
-        state.map.addChild(route);
+        state.map.geoObjects.add(route);
         state.route = route;
 
-        route.events.once('update', () => {
-            const data = route.getRoute();
-            if (data && data.properties) {
-                const length = data.properties.distance || 0;
-                state.distanceKm = Math.round(length / 10) / 100;
-                els.distance.textContent = state.distanceKm.toFixed(1) + ' \u043a\u043c';
-                updateFuelResult();
+        route.model.events.add('requestsuccess', function() {
+            const active = route.getActiveRoute();
+            if (active) {
+                const dist = active.properties.get('distance');
+                console.log('Route distance:', dist);
+                if (dist && dist.value) {
+                    state.distanceKm = Math.round(dist.value / 10) / 100;
+                    els.distance.textContent = state.distanceKm.toFixed(1) + ' км';
+                    updateResult();
+                }
             }
         });
 
-        setTimeout(() => {
-            if (state.distanceKm === null) fallbackDist(pointA, pointB);
-        }, 8000);
+        route.model.events.add('requestfail', function() {
+            console.error('Route failed');
+            useFallback(A, B);
+        });
 
-    } catch (err) {
+        setTimeout(() => { if (state.distanceKm === null) useFallback(A, B); }, 10000);
+
+    } catch(err) {
         console.error('Route error:', err);
-        fallbackDist(pointA, pointB);
+        useFallback(A, B);
     }
 }
 
-function fallbackDist(a, b) {
-    const d = haversine(a.lat, a.lon, b.lat, b.lon);
+function useFallback(A, B) {
+    const d = haversine(A.lat, A.lon, B.lat, B.lon);
     state.distanceKm = Math.round(d * 10) / 10;
-    els.distance.textContent = '~' + state.distanceKm.toFixed(1) + ' \u043a\u043c (\u043f\u043e \u043f\u0440\u044f\u043c\u043e\u0439)';
-    updateFuelResult();
+    els.distance.textContent = '~' + state.distanceKm.toFixed(1) + ' км';
+    updateResult();
 }
 
-function updateFuelResult() {
+function updateResult() {
     if (state.distanceKm === null) return;
     const cons = parseFloat(els.fuelConsumption.value) || 8;
     const liters = (state.distanceKm * cons) / 100;
-    els.fuelResult.textContent = liters.toFixed(1) + ' \u043b';
+    els.fuelResult.textContent = liters.toFixed(1) + ' л';
 }
 
-async function reverseGeocode(lat, lon) {
-    const url =
-        'https://geocode-maps.yandex.ru/1.x/' +
-        '?format=json' +
-        '&apikey=' + CONFIG.geocodeKey +
-        '&geocode=' + lon + ',' + lat +
-        '&kind=house' +
-        '&results=1';
-
+async function geocode(lat, lon) {
     try {
-        const resp = await fetch(url);
-        const data = await resp.json();
-        const geoObjects = data.response.GeoObjectCollection.featureMember;
-        if (geoObjects && geoObjects.length > 0) {
-            return geoObjects[0].GeoObject.metaDataProperty.GeocoderMetaData.text;
+        const result = await ymaps.geocode([lat, lon], { results: 1 });
+        const first = result.geoObjects.get(0);
+        if (first) {
+            return first.properties.get('name') + ' ' + first.properties.get('description');
         }
     } catch (err) {
         console.warn('Geocode error:', err);
@@ -180,54 +128,42 @@ async function reverseGeocode(lat, lon) {
 }
 
 function addMarker(lat, lon, label, color) {
-    const YMapMarker = window._YMapMarker;
-    if (!YMapMarker) return;
-
-    const el = document.createElement('div');
-    el.className = 'custom-marker';
-    el.innerHTML = '<span class="marker-label">' + label + '</span>';
-    el.style.setProperty('--marker-color', color);
-
-    const marker = new YMapMarker({ coordinates: [lon, lat] }, el);
-    state.map.addChild(marker);
-    state.markers.push(marker);
+    const pm = new ymaps.Placemark([lat, lon], {
+        hintContent: label === 'A' ? 'Точка А' : 'Точка Б',
+        balloonContent: label === 'A' ? 'Начало' : 'Конец',
+    }, {
+        preset: 'islands#icon',
+        iconColor: color,
+        draggable: true,
+    });
+    state.map.geoObjects.add(pm);
+    state.markers.push(pm);
 }
 
-function removeAllMarkers() {
-    state.markers.forEach((m) => state.map.removeChild(m));
+function clearMarkers() {
+    state.markers.forEach(m => state.map.geoObjects.remove(m));
     state.markers = [];
 }
 
-function removeRoute() {
-    if (state.route) {
-        state.map.removeChild(state.route);
-        state.route = null;
-    }
+function clearRoute() {
+    if (state.route) { state.map.geoObjects.remove(state.route); state.route = null; }
 }
 
-function resetRoute() {
+function resetAll() {
     clickCount = 0;
     state.pointA = null; state.pointB = null; state.distanceKm = null;
-    removeAllMarkers(); removeRoute();
+    clearMarkers(); clearRoute();
     els.pointA.textContent = '\u2014';
     els.pointB.textContent = '\u2014';
     els.distance.textContent = '\u2014';
     els.fuelResult.textContent = '\u2014';
 }
 
-function clearResults() {
+function resetResults() {
     state.pointB = null; state.distanceKm = null;
     els.pointB.textContent = '\u2014';
     els.distance.textContent = '\u2014';
     els.fuelResult.textContent = '\u2014';
-}
-
-function truncateAddress(address) {
-    if (!address) return '\u2014';
-    const parts = address.split(', ');
-    if (parts.length >= 5) return parts.slice(0, 3).join(', ') + '\u2026';
-    if (parts.length >= 3) return parts.slice(0, 2).join(', ');
-    return address;
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
