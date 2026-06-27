@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fuel Route Tracker</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="https://api-maps.yandex.ru/2.1/?apikey=6b86b20b-ab60-428d-a9b0-6ca63263f4f0&lang=ru_RU&load=multiRoute" type="text/javascript" onerror="window.__ymapsError=true"></script>
+    <script src="https://api-maps.yandex.ru/3.0/?apikey=6b86b20b-ab60-428d-a9b0-6ca63263f4f0&lang=ru_RU"
+        type="text/javascript"
+        onerror="window.__ymapsError=true; console.error('Yandex Maps API script failed to load');">
+    </script>
 </head>
 <body>
     <div id="map"></div>
@@ -50,4 +53,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-

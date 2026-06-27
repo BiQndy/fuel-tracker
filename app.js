@@ -1,9 +1,7 @@
-// ============================================================
-// Fuel Route Tracker — logic for Yandex Maps API 2.1
-// ============================================================
-
+// Fuel Route Tracker - Yandex Maps API 3.0
 const CONFIG = {
     apikey: '6b86b20b-ab60-428d-a9b0-6ca63263f4f0',
+    geocodeKey: '2010aee2-6b9d-4ca4-8529-ce5b57bd2290',
     center: [55.751244, 37.618423],
     zoom: 12,
     markerColors: { A: '#4fc3f7', B: '#ff7043' },
@@ -26,41 +24,61 @@ const state = {
 
 let clickCount = 0;
 
-ymaps.ready(init);
 
-function init() {
-    if (typeof ymaps === 'undefined' || window.__ymapsError) {
-        showMapError();
+async function init() {
+    console.log('init() called, ymaps3:', typeof ymaps3);
+
+    if (typeof ymaps3 === 'undefined' || window.__ymapsError) {
+        document.getElementById('map').innerHTML =
+            '<div class="map-error">' +
+            '<h3>\u26d4 \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0430\u0440\u0442\u0443</h3>' +
+            '<p>\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 API-\u043a\u043b\u044e\u0447 \u0432 \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0435<br/><a href="https://developer.tech.yandex.ru/" target="_blank">developer.tech.yandex.ru</a></p>' +
+            '<p class="map-error-hint">F12 \u2192 Console</p></div>';
         return;
     }
 
-    const map = new ymaps.Map('map', {
-        center: CONFIG.center,
-        zoom: CONFIG.zoom,
-        controls: ['zoomControl'],
-    });
-    state.map = map;
+    try {
+        const { YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapMarker, YMapListener } =
+            await ymaps3.import('@yandex/ymaps3-map');
 
-    map.events.add('click', function (e) {
-        const coords = e.get('coords');
-        handleMapClick(coords[0], coords[1]);
-    });
+        await ymaps3.import('@yandex/ymaps3-marker');
+        const { YMapMultiRoute } = await ymaps3.import('@yandex/ymaps3-multi-route');
 
-    els.fuelConsumption.addEventListener('input', updateFuelResult);
-    els.resetBtn.addEventListener('click', resetRoute);
+        window._YMapMarker = YMapMarker;
+        console.log('Modules loaded:', { YMap, YMapMarker, YMapMultiRoute });
+
+        const map = new YMap(
+            document.getElementById('map'),
+            { location: { center: CONFIG.center, zoom: CONFIG.zoom } },
+            [ new YMapDefaultSchemeLayer(), new YMapDefaultFeaturesLayer() ]
+        );
+        state.map = map;
+
+        const listener = new YMapListener({
+            layer: 'any',
+            onClick: (e) => {
+                const coords = e.worldCoordinates;
+                handleMapClick(coords[1], coords[0]);
+            },
+        });
+        map.addChild(listener);
+
+        els.fuelConsumption.addEventListener('input', updateFuelResult);
+        els.resetBtn.addEventListener('click', resetRoute);
+
+    } catch (err) {
+        console.error('Init error:', err);
+        document.getElementById('map').innerHTML =
+            '<div class="map-error"><h3>\u26d4 \u041e\u0448\u0438\u0431\u043a\u0430</h3><p>' + err.message + '</p></div>';
+    }
 }
 
-function showMapError() {
-    document.getElementById('map').innerHTML =
-        '<div class="map-error">' +
-        '<h3>\u26d4 \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0430\u0440\u0442\u0443</h3>' +
-        '<p>API-\u043a\u043b\u044e\u0447 \u043d\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u0435\u043d.</p>' +
-        '<p class="map-error-hint">F12 \u2192 Console</p></div>';
-    console.error('Yandex.Maps API failed to load');
-}
+ymaps3.ready.then(init);
+
 
 async function handleMapClick(lat, lon) {
     const address = await reverseGeocode(lat, lon);
+
     if (clickCount === 0) {
         state.pointA = { lat, lon, address };
         els.pointA.textContent = truncateAddress(address);
@@ -78,43 +96,44 @@ async function handleMapClick(lat, lon) {
     }
 }
 
+
 async function buildRoute(pointA, pointB) {
     removeRoute();
     try {
-        var route = new ymaps.multiRoute.MultiRoute({
-            referencePoints: [
-                [pointA.lat, pointA.lon],
-                [pointB.lat, pointB.lon],
-            ],
-            params: { routingMode: 'auto' },
-        }, {
-            boundsAutoApply: true,
-            strokeWidth: 4,
-            strokeColor: '#4fc3f7',
-            opacity: 0.85,
-            routeStrokeWidth: 6,
-        });
+        const { YMapMultiRoute } = await ymaps3.import('@yandex/ymaps3-multi-route');
 
-        state.map.geoObjects.add(route);
+        const route = new YMapMultiRoute(
+            {
+                coordinates: [
+                    [pointA.lon, pointA.lat],
+                    [pointB.lon, pointB.lat],
+                ],
+                routingMode: 'driving',
+            },
+            {
+                strokeWidth: 4,
+                strokeColor: '#4fc3f7',
+                opacity: 0.85,
+                activeStrokeWidth: 6,
+                viaPointVisible: false,
+                boundsAutoApply: true,
+            }
+        );
+
+        state.map.addChild(route);
         state.route = route;
 
-        route.model.events.add('requestsuccess', function () {
-            var active = route.getActiveRoute();
-            if (active) {
-                var dist = active.properties.get('distance');
-                if (dist && dist.value) {
-                    state.distanceKm = Math.round(dist.value / 10) / 100;
-                    els.distance.textContent = state.distanceKm.toFixed(1) + ' \u043a\u043c';
-                    updateFuelResult();
-                }
+        route.events.once('update', () => {
+            const data = route.getRoute();
+            if (data && data.properties) {
+                const length = data.properties.distance || 0;
+                state.distanceKm = Math.round(length / 10) / 100;
+                els.distance.textContent = state.distanceKm.toFixed(1) + ' \u043a\u043c';
+                updateFuelResult();
             }
         });
 
-        route.model.events.add('requestfail', function () {
-            fallbackDist(pointA, pointB);
-        });
-
-        setTimeout(function () {
+        setTimeout(() => {
             if (state.distanceKm === null) fallbackDist(pointA, pointB);
         }, 8000);
 
@@ -125,7 +144,7 @@ async function buildRoute(pointA, pointB) {
 }
 
 function fallbackDist(a, b) {
-    var d = haversineDistance(a.lat, a.lon, b.lat, b.lon);
+    const d = haversine(a.lat, a.lon, b.lat, b.lon);
     state.distanceKm = Math.round(d * 10) / 10;
     els.distance.textContent = '~' + state.distanceKm.toFixed(1) + ' \u043a\u043c (\u043f\u043e \u043f\u0440\u044f\u043c\u043e\u0439)';
     updateFuelResult();
@@ -133,61 +152,57 @@ function fallbackDist(a, b) {
 
 function updateFuelResult() {
     if (state.distanceKm === null) return;
-    var cons = parseFloat(els.fuelConsumption.value) || 8;
-    var liters = (state.distanceKm * cons) / 100;
+    const cons = parseFloat(els.fuelConsumption.value) || 8;
+    const liters = (state.distanceKm * cons) / 100;
     els.fuelResult.textContent = liters.toFixed(1) + ' \u043b';
 }
 
 async function reverseGeocode(lat, lon) {
+    const url =
+        'https://geocode-maps.yandex.ru/1.x/' +
+        '?format=json' +
+        '&apikey=' + CONFIG.geocodeKey +
+        '&geocode=' + lon + ',' + lat +
+        '&kind=house' +
+        '&results=1';
+
     try {
-        var res = await ymaps.geocode([lat, lon], { results: 1, kind: 'house' });
-        var first = res.geoObjects.get(0);
-        if (first) {
-            return first.properties.get('name') + ', ' + first.properties.get('description');
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const geoObjects = data.response.GeoObjectCollection.featureMember;
+        if (geoObjects && geoObjects.length > 0) {
+            return geoObjects[0].GeoObject.metaDataProperty.GeocoderMetaData.text;
         }
-    } catch (e) { console.warn('Geocode error:', e); }
+    } catch (err) {
+        console.warn('Geocode error:', err);
+    }
     return lat.toFixed(4) + ', ' + lon.toFixed(4);
 }
 
 function addMarker(lat, lon, label, color) {
-    var pm = new ymaps.Placemark([lat, lon], {
-        iconContent: label,
-    }, {
-        preset: 'islands#circleIcon',
-        iconColor: color,
-        draggable: true,
-    });
+    const YMapMarker = window._YMapMarker;
+    if (!YMapMarker) return;
 
-    pm.events.add('dragend', function () {
-        var c = pm.geometry.getCoordinates();
-        if (label === 'A' && state.pointA) {
-            state.pointA.lat = c[0]; state.pointA.lon = c[1];
-            reverseGeocode(c[0], c[1]).then(function (addr) {
-                state.pointA.address = addr;
-                els.pointA.textContent = truncateAddress(addr);
-                if (state.pointB) buildRoute(state.pointA, state.pointB);
-            });
-        } else if (label === 'B' && state.pointB) {
-            state.pointB.lat = c[0]; state.pointB.lon = c[1];
-            reverseGeocode(c[0], c[1]).then(function (addr) {
-                state.pointB.address = addr;
-                els.pointB.textContent = truncateAddress(addr);
-                if (state.pointA) buildRoute(state.pointA, state.pointB);
-            });
-        }
-    });
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.innerHTML = '<span class="marker-label">' + label + '</span>';
+    el.style.setProperty('--marker-color', color);
 
-    state.map.geoObjects.add(pm);
-    state.markers.push(pm);
+    const marker = new YMapMarker({ coordinates: [lon, lat] }, el);
+    state.map.addChild(marker);
+    state.markers.push(marker);
 }
 
 function removeAllMarkers() {
-    state.markers.forEach(function (m) { state.map.geoObjects.remove(m); });
+    state.markers.forEach((m) => state.map.removeChild(m));
     state.markers = [];
 }
 
 function removeRoute() {
-    if (state.route) { state.map.geoObjects.remove(state.route); state.route = null; }
+    if (state.route) {
+        state.map.removeChild(state.route);
+        state.route = null;
+    }
 }
 
 function resetRoute() {
@@ -209,16 +224,16 @@ function clearResults() {
 
 function truncateAddress(address) {
     if (!address) return '\u2014';
-    var parts = address.split(', ');
+    const parts = address.split(', ');
     if (parts.length >= 5) return parts.slice(0, 3).join(', ') + '\u2026';
     if (parts.length >= 3) return parts.slice(0, 2).join(', ');
     return address;
 }
 
-function haversineDistance(lat1, lon1, lat2, lon2) {
-    var R = 6371;
-    var dLat = (lat2 - lat1) * Math.PI / 180;
-    var dLon = (lon2 - lon1) * Math.PI / 180;
-    var a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
