@@ -1,0 +1,3 @@
+# Python HTTP server cache
+__pycache__/
+*.py[cod]
