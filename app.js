@@ -1,4 +1,5 @@
-// Fuel Route Tracker - Yandex Maps API 2.1
+// Fuel Route Tracker - 2GIS MapGL JS API
+const API_KEY = 'b33facdc-f20e-4837-867d-36ed05444897';
 const els = {
     pointA: document.getElementById('pointA'),
     pointB: document.getElementById('pointB'),
@@ -13,19 +14,19 @@ const state = { pointA: null, pointB: null, markers: [], route: null, distanceKm
 let clickCount = 0;
 
 function init() {
-    console.log('Yandex Maps loaded:', typeof ymaps);
-    if (typeof ymaps === 'undefined') { showError(); return; }
+    console.log('2GIS MapGL loaded:', typeof DG);
+    if (typeof DG === 'undefined') { showError(); return; }
 
-    const map = new ymaps.Map('map', {
-        center: [55.751244, 37.618423],
+    const map = new DG.Map('map', {
+        center: [37.618423, 55.751244], // [lon, lat] for 2GIS
         zoom: 12,
-        controls: ['zoomControl'],
+        key: API_KEY,
     });
     state.map = map;
 
-    map.events.add('click', function(e) {
-        const c = e.get('coords');
-        handleClick(c[0], c[1]);
+    map.on('click', (e) => {
+        const [lon, lat] = e.lngLat;
+        handleClick(lat, lon);
     });
 
     els.fuelConsumption.addEventListener('input', updateResult);
@@ -33,16 +34,16 @@ function init() {
 }
 
 function showError() {
-    const el = document.getElementById('map');
-    if (el) el.innerHTML = '<div style=\'display:flex;align-items:center;justify-content:center;height:100%;color:#e0e0e0;text-align:center;padding:20px;\'><div><h3 style=\'color:#ff7043;\'>Не удалось загрузить Яндекс.Карты</h3><p>Проверьте консоль (F12). Если IP-адрес заблокирован, откройте приложение через localhost (python -m http.server 8000).</p></div></div>';
-    console.error('ERROR: ymaps is not defined');
+    document.getElementById('map').innerHTML =
+        '<div style=\'display:flex;align-items:center;justify-content:center;height:100%;color:#e0e0e0;text-align:center;padding:20px;\'><div><h3 style=\'color:#ff7043;\'>Ошибка загрузки 2ГИС</h3><p>Проверьте консоль (F12).</p></div></div>';
+    console.error('ERROR: DG is not defined');
 }
 
-ymaps.ready(init);
+DG.ready(init);
 
 
 async function handleClick(lat, lon) {
-    const address = await geocode(lat, lon);
+    const address = await reverseGeocode(lat, lon);
     console.log('Clicked:', lat, lon, 'Address:', address);
 
     if (clickCount === 0) {
@@ -66,35 +67,30 @@ async function buildRoute(A, B) {
     clearRoute();
     console.log('Building route:', A.lat, A.lon, '->', B.lat, B.lon);
 
+    const url = 'https://routing.api.2gis.com/get_directions/v1?key=' + API_KEY +
+        '&origin=' + A.lon + ',' + A.lat +
+        '&destination=' + B.lon + ',' + B.lat +
+        '&result_format=json';
+
     try {
-        const route = new ymaps.multiRoute.MultiRoute({
-            referencePoints: [[A.lat, A.lon], [B.lat, B.lon]],
-        }, { boundsAutoApply: true });
+        const resp = await fetch(url);
+        const data = await resp.json();
+        console.log('Route response:', data);
 
-        state.map.geoObjects.add(route);
-        state.route = route;
+        let distance = null;
+        if (data && data.result && data.result.length > 0) {
+            distance = data.result[0].routeGeometry.totalDistance;
+            // Draw route on map if possible
+        }
 
-        route.model.events.add('requestsuccess', function() {
-            const active = route.getActiveRoute();
-            if (active) {
-                const dist = active.properties.get('distance');
-                console.log('Route distance:', dist);
-                if (dist && dist.value) {
-                    state.distanceKm = Math.round(dist.value / 10) / 100;
-                    els.distance.textContent = state.distanceKm.toFixed(1) + ' км';
-                    updateResult();
-                }
-            }
-        });
-
-        route.model.events.add('requestfail', function() {
-            console.error('Route failed');
-            useFallback(A, B);
-        });
-
-        setTimeout(() => { if (state.distanceKm === null) useFallback(A, B); }, 10000);
-
-    } catch(err) {
+        if (distance) {
+            state.distanceKm = Math.round(distance / 10) / 100;
+            els.distance.textContent = state.distanceKm.toFixed(1) + ' км';
+            updateResult();
+        } else {
+            throw new Error('No distance');
+        }
+    } catch (err) {
         console.error('Route error:', err);
         useFallback(A, B);
     }
@@ -114,12 +110,21 @@ function updateResult() {
     els.fuelResult.textContent = liters.toFixed(1) + ' л';
 }
 
-async function geocode(lat, lon) {
+async function reverseGeocode(lat, lon) {
+    const url =
+        'https://catalog.api.2gis.com/2.0/geocode' +
+        '?key=' + API_KEY +
+        '&lat=' + lat +
+        '&lon=' + lon +
+        '&format=json';
+
     try {
-        const result = await ymaps.geocode([lat, lon], { results: 1 });
-        const first = result.geoObjects.get(0);
-        if (first) {
-            return first.properties.get('name') + ' ' + first.properties.get('description');
+        const resp = await fetch(url);
+        const data = await resp.json();
+        console.log('Geocode response:', data);
+
+        if (data && data.result && data.result.items && data.result.items.length > 0) {
+            return data.result.items[0].full_name || data.result.items[0].name;
         }
     } catch (err) {
         console.warn('Geocode error:', err);
@@ -128,25 +133,23 @@ async function geocode(lat, lon) {
 }
 
 function addMarker(lat, lon, label, color) {
-    const pm = new ymaps.Placemark([lat, lon], {
-        hintContent: label === 'A' ? 'Точка А' : 'Точка Б',
-        balloonContent: label === 'A' ? 'Начало' : 'Конец',
-    }, {
-        preset: 'islands#icon',
-        iconColor: color,
-        draggable: true,
-    });
-    state.map.geoObjects.add(pm);
-    state.markers.push(pm);
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.innerHTML = '<span class="marker-label">' + label + '</span>';
+    el.style.setProperty('--marker-color', color);
+    const marker = new DG.Marker({ coordinates: [lon, lat] });
+    marker.setElement(el);
+    marker.addTo(state.map);
+    state.markers.push(marker);
 }
 
 function clearMarkers() {
-    state.markers.forEach(m => state.map.geoObjects.remove(m));
+    state.markers.forEach(m => m.remove());
     state.markers = [];
 }
 
 function clearRoute() {
-    if (state.route) { state.map.geoObjects.remove(state.route); state.route = null; }
+    if (state.route) { state.route.remove(); state.route = null; }
 }
 
 function resetAll() {
